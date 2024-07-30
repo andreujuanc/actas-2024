@@ -23,7 +23,7 @@ do
     if [ "$url" != "null" ]; then
         filename=$(basename $url)
         echo "Data found for V$random_number at $filename"
-        curl -s "$url" --output "./actas/$filename"
+        curl -s "$url" --output "./actas_raw/$filename"
 
     fi
 done
