@@ -22,25 +22,43 @@ func main() {
 		panic(err)
 	}
 
-	csvFile, err := os.Create("resultados.csv")
+	csvFile, err := os.Create("resultados_v2.csv")
 	if err != nil {
 		panic(err)
 	}
 	defer csvFile.Close()
 
 	writer := csv.NewWriter(csvFile)
-	// For now write just a summary, but we should write all the data so we can dump into a DB.
-	writer.Write([]string{"acta", "codigo", "maduro", "edmundo", "otros", "total_validos", "total_nulo", "total_invalido"})
+	defer writer.Flush()
+	headers := []string{"acta", "codigo", "codigo_centro", "nro_mesa", "maduro", "edmundo", "martinez", "bertucci", "brito", "ecarri", "fermin", "ceballos", "marquez", "conde_pajuo",  "total_validos", "total_nulo", "total_invalido"}
+	writer.Write(headers)
 	for _, r := range results {
 		totals := r.candidateTotals()
 		nmm := totals[candidateMaduro]
 		egu := totals[candidateGonzalez]
+		lm := totals[candidateMartinez]
+		jber := totals[candidateBertucci]
+		jb := totals[candidateBrito]
+		ae := totals[candidateEcarri]
+		cf := totals[candidateFermin]
+		dc := totals[candidateCeballos]
+		em := totals[candidateMarquez]
+		ecp := totals[candidateRausseo]
 		writer.Write([]string{
 			r.ActaFilename,
 			r.ActaCode,
+			r.CenterCode,
+			r.Table,
 			strconv.Itoa(nmm),
 			strconv.Itoa(egu),
-			strconv.Itoa(r.ValidVotes - nmm - egu),
+			strconv.Itoa(lm),
+			strconv.Itoa(jber),
+			strconv.Itoa(jb),
+			strconv.Itoa(ae),
+			strconv.Itoa(cf),
+			strconv.Itoa(dc),
+			strconv.Itoa(em),
+			strconv.Itoa(ecp),
 			strconv.Itoa(r.ValidVotes),
 			strconv.Itoa(r.NullVotes),
 			strconv.Itoa(r.InvalidVotes),
@@ -60,7 +78,7 @@ func processDir(dir string) ([]*Result, error) {
 	for _, file := range files {
 		if !file.IsDir() {
 			log.Printf("processing %s...", file.Name())
-			result, err := process(file.Name(), filepath.Join(dir, file.Name()))
+			result, err := processQR(file.Name(), filepath.Join(dir, file.Name()))
 			if err != nil {
 				log.Printf("failed to process %s: %s", file.Name(), err)
 				continue
@@ -74,6 +92,7 @@ func processDir(dir string) ([]*Result, error) {
 	return results, nil
 }
 
+// types
 type Option struct {
 	Candidate string // TODO: make these enums
 	Party     string
@@ -134,6 +153,8 @@ var ballotOrder = []Option{
 type Result struct {
 	ActaCode     string
 	ActaFilename string
+	CenterCode   string
+	Table        string
 
 	ValidVotes   int
 	NullVotes    int
@@ -150,16 +171,18 @@ func (r *Result) candidateTotals() map[string]int {
 	return tallies
 }
 
-func process(filename, path string) (*Result, error) {
-	data, err := read(path)
+// methods to process QR data
+func processQR(filename, path string) (*Result, error) {
+	data, err := readQR(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read qr code from image")
 	}
 
-	return parse(filename, data)
+	return parseQRData(filename, data)
 }
 
-func read(path string) (string, error) {
+func readQR(path string) (string, error) {
+	// This function reads the actas QR and retuns a string with the actas data
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -185,15 +208,27 @@ func read(path string) (string, error) {
 	return result.String(), nil
 }
 
-func parse(filename, data string) (*Result, error) {
-	// Example data:
-	// 110601011.04.1.0001!122,1,0,0,4,2,0,0,2,1,0,1,2,1,0,0,0,5,0,2,0,0,0,0,0,0,0,0,1,0,0,0,0,8,22,406,0,1!0!0
+func parseQRData(filename, data string) (*Result, error) {
+	// This function parses the data from the actas QR
+	// The QR code from the actas outputs a string with this format:
+	//     110601011.04.1.0001!122,1,0,0,4,2,0,0,2,1,0,1,2,1,0,0,0,5,0,2,0,0,0,0,0,0,0,0,1,0,0,0,0,8,22,406,0,1!0!0
+	// It has 4 parts, divided by an exclamation symbol "!"
+	// The first part corresponds to the acta code: 110601011.04.1.0001
+  //    this code contains the voting center code, the voting table number and
+	//    an unidentified number that does not seem to change:
+	//    center: 110601011, table: 04, unidentified numer: 1.0001
+	// The second part has the votes per party, following the order in ballotOrder: 122,1,0,0,4,2,0,0,2,1,0,1,2,1,0,0,0,5,0,2,0,0,0,0,0,0,0,0,1,0,0,0,0,8,22,406,0,1
+	// The third part is the null votes
+	// The fourth part is the invalid votes
 	parts := strings.Split(data, "!")
 	if len(parts) != 4 {
 		return nil, errors.New(fmt.Sprintf("did not find 4 parts in data: %s", data))
 	}
 
-	actaCode := parts[0] // 110601011.04.1.0001 (first part is the voting center code)
+	actaCode := parts[0]
+	actaCodeParts := strings.Split(actaCode, ".")
+	centerCode := actaCodeParts[0]
+	table := actaCodeParts[1]
 	validVotes := parts[1]
 	nullVotes, err := strconv.Atoi(parts[2])
 	if err != nil {
@@ -211,6 +246,8 @@ func parse(filename, data string) (*Result, error) {
 
 	result := &Result{
 		ActaCode:     actaCode,
+		CenterCode:   centerCode,
+		Table:        table,
 		ActaFilename: filename,
 		NullVotes:    nullVotes,
 		InvalidVotes: invalidVotes,
