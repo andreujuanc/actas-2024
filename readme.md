@@ -1,8 +1,8 @@
-# Proyecto de Análisis de Datos Electorales de Venezuela
+#Análisis de Datos Electorales de Venezuela
 
 ## Visión General
 
-Este proyecto está diseñado para recopilar, procesar y analizar datos de las elecciones venezolanas. Incluye scripts para la recolección de datos, procesamiento de imágenes y tabulación de votos a partir de actas digitales.
+Este proyecto está diseñado para recopilar, procesar y analizar datos de las elecciones venezolanas. Incluye scripts para la recolección de datos, procesamiento de imágenes y tabulación de votos a partir de actas digitales con el fin de preservar y defender nuestros votos como venezolanos de ataques malicioso contra las bases de datos principales.
 
 URL del repositorio: [https://github.com/andreujuanc/actas-2024](https://github.com/andreujuanc/actas-2024)
 
