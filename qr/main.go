@@ -30,7 +30,7 @@ func main() {
 
 	writer := csv.NewWriter(csvFile)
 	defer writer.Flush()
-	headers := []string{"acta", "codigo", "maduro", "edmundo", "martinez", "bertucci", "brito", "ecarri", "fermin", "ceballos", "marquez", "conde_pajuo",  "total_validos", "total_nulo", "total_invalido"}
+	headers := []string{"acta", "codigo", "codigo_centro", "nro_mesa", "maduro", "edmundo", "martinez", "bertucci", "brito", "ecarri", "fermin", "ceballos", "marquez", "conde_pajuo",  "total_validos", "total_nulo", "total_invalido"}
 	writer.Write(headers)
 	for _, r := range results {
 		totals := r.candidateTotals()
@@ -47,6 +47,8 @@ func main() {
 		writer.Write([]string{
 			r.ActaFilename,
 			r.ActaCode,
+			r.CenterCode,
+			r.Table,
 			strconv.Itoa(nmm),
 			strconv.Itoa(egu),
 			strconv.Itoa(lm),
@@ -151,6 +153,8 @@ var ballotOrder = []Option{
 type Result struct {
 	ActaCode     string
 	ActaFilename string
+	CenterCode   string
+	Table        string
 
 	ValidVotes   int
 	NullVotes    int
@@ -207,18 +211,24 @@ func readQR(path string) (string, error) {
 func parseQRData(filename, data string) (*Result, error) {
 	// This function parses the data from the actas QR
 	// The QR code from the actas outputs a string with this format:
-	// 110601011.04.1.0001!122,1,0,0,4,2,0,0,2,1,0,1,2,1,0,0,0,5,0,2,0,0,0,0,0,0,0,0,1,0,0,0,0,8,22,406,0,1!0!0
-	// it has 4 parts, divided by an exclamation symbol "!"
-	// the first part corresponds to the voting center code: 110601011.04.1.0001
-	// the second part has the votes per party, following the order in ballotOrder: 122,1,0,0,4,2,0,0,2,1,0,1,2,1,0,0,0,5,0,2,0,0,0,0,0,0,0,0,1,0,0,0,0,8,22,406,0,1
-	// the third part is the null votes
-	// the fourth part is the invalid votes
+	//     110601011.04.1.0001!122,1,0,0,4,2,0,0,2,1,0,1,2,1,0,0,0,5,0,2,0,0,0,0,0,0,0,0,1,0,0,0,0,8,22,406,0,1!0!0
+	// It has 4 parts, divided by an exclamation symbol "!"
+	// The first part corresponds to the acta code: 110601011.04.1.0001
+  //    this code contains the voting center code, the voting table number and
+	//    an unidentified number that does not seem to change:
+	//    center: 110601011, table: 04, unidentified numer: 1.0001
+	// The second part has the votes per party, following the order in ballotOrder: 122,1,0,0,4,2,0,0,2,1,0,1,2,1,0,0,0,5,0,2,0,0,0,0,0,0,0,0,1,0,0,0,0,8,22,406,0,1
+	// The third part is the null votes
+	// The fourth part is the invalid votes
 	parts := strings.Split(data, "!")
 	if len(parts) != 4 {
 		return nil, errors.New(fmt.Sprintf("did not find 4 parts in data: %s", data))
 	}
 
 	actaCode := parts[0]
+	actaCodeParts := strings.Split(actaCode, ".")
+	centerCode := actaCodeParts[0]
+	table := actaCodeParts[1]
 	validVotes := parts[1]
 	nullVotes, err := strconv.Atoi(parts[2])
 	if err != nil {
@@ -236,6 +246,8 @@ func parseQRData(filename, data string) (*Result, error) {
 
 	result := &Result{
 		ActaCode:     actaCode,
+		CenterCode:   centerCode,
+		Table:        table,
 		ActaFilename: filename,
 		NullVotes:    nullVotes,
 		InvalidVotes: invalidVotes,
