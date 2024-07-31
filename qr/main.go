@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -16,59 +17,108 @@ import (
 	"github.com/pkg/errors"
 )
 
+var resultsFile = "resultados.csv"
+
 func main() {
-	results, err := processDir("../actas")
+	filenames, err := processed(resultsFile)
+	if err != nil {
+		log.Printf("failed to read results from %s", resultsFile)
+		panic(err)
+	}
+
+	results, err := processDir(filenames, "../actas", resultsFile)
 	if err != nil {
 		panic(err)
 	}
 
-	csvFile, err := os.Create("resultados.csv")
+	log.Printf("processed %d new actas", len(results))
+	log.Printf("DONE :)")
+}
+
+func processed(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	r := csv.NewReader(f)
+	records, err := r.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	filenames := []string{}
+	for i, row := range records {
+		if i == 0 { // skip header
+			continue
+		}
+		filenames = append(filenames, row[0])
+	}
+	log.Printf("read %d existing processed actas", len(filenames))
+
+	return filenames, nil
+}
+
+func appendResults(results []*Result, path string) error {
+	// We append so we avoid clobbering existing data, and punt on parsing existing csv data
+	csvFile, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}
 	defer csvFile.Close()
 
 	writer := csv.NewWriter(csvFile)
-	// For now write just a summary, but we should write all the data so we can dump into a DB.
-	writer.Write([]string{"acta", "codigo", "maduro", "edmundo", "otros", "total_validos", "total_nulo", "total_invalido"})
 	for _, r := range results {
-		totals := r.candidateTotals()
-		nmm := totals[candidateMaduro]
-		egu := totals[candidateGonzalez]
-		writer.Write([]string{
-			r.ActaFilename,
-			r.ActaCode,
-			strconv.Itoa(nmm),
-			strconv.Itoa(egu),
-			strconv.Itoa(r.ValidVotes - nmm - egu),
-			strconv.Itoa(r.ValidVotes),
-			strconv.Itoa(r.NullVotes),
-			strconv.Itoa(r.InvalidVotes),
-		})
+		err = writer.Write(r.asRow())
+		if err != nil {
+			return err
+		}
 	}
+	writer.Flush()
+	log.Printf("flushed %d rows", len(results))
 
-	log.Printf("DONE :)")
+	return nil
 }
 
-func processDir(dir string) ([]*Result, error) {
+func processDir(processed []string, dir string, resultsFile string) ([]*Result, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
 	results := []*Result{}
+	unflushed := []*Result{}
 	for _, file := range files {
-		if !file.IsDir() {
-			log.Printf("processing %s...", file.Name())
-			result, err := process(file.Name(), filepath.Join(dir, file.Name()))
+		if len(unflushed) > 0 && len(unflushed)%100 == 0 { // flush every 100 results
+			err = appendResults(unflushed, resultsFile)
 			if err != nil {
-				log.Printf("failed to process %s: %s", file.Name(), err)
+				return nil, err
+			}
+			unflushed = []*Result{}
+		}
+
+		if !file.IsDir() {
+			filename := file.Name()
+			if slices.Contains(processed, filename) {
+				log.Printf("skipping %s, already extracted", filename)
+				continue
+			}
+			log.Printf("processing %s...", filename)
+			result, err := process(filename, filepath.Join(dir, filename))
+			if err != nil {
+				log.Printf("failed to process %s: %s", filename, err)
 				continue
 			}
 			byCandidate := result.candidateTotals()
-			log.Printf("successfully processed %s... maduro %d, edmundo %d", file.Name(), byCandidate[candidateMaduro], byCandidate[candidateGonzalez])
+			log.Printf("successfully processed %s... maduro %d, edmundo %d", filename, byCandidate[candidateMaduro], byCandidate[candidateGonzalez])
+
 			results = append(results, result)
+			unflushed = append(unflushed, result)
 		}
+	}
+	err = appendResults(unflushed, resultsFile)
+	if err != nil {
+		return nil, err
 	}
 
 	return results, nil
@@ -150,8 +200,29 @@ func (r *Result) candidateTotals() map[string]int {
 	return tallies
 }
 
+func (r *Result) header() []string {
+	return []string{"acta", "codigo", "maduro", "edmundo", "otros", "total_validos", "total_nulo", "total_invalido"}
+}
+
+func (r *Result) asRow() []string {
+	// For now write just a summary, but we should write all the data so we can dump into a DB.
+	totals := r.candidateTotals()
+	nmm := totals[candidateMaduro]
+	egu := totals[candidateGonzalez]
+	return []string{
+		r.ActaFilename,
+		r.ActaCode,
+		strconv.Itoa(nmm),
+		strconv.Itoa(egu),
+		strconv.Itoa(r.ValidVotes - nmm - egu),
+		strconv.Itoa(r.ValidVotes),
+		strconv.Itoa(r.NullVotes),
+		strconv.Itoa(r.InvalidVotes),
+	}
+}
+
 func process(filename, path string) (*Result, error) {
-	data, err := read(path)
+	data, err := readQR(path)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read qr code from image")
 	}
@@ -159,7 +230,7 @@ func process(filename, path string) (*Result, error) {
 	return parse(filename, data)
 }
 
-func read(path string) (string, error) {
+func readQR(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
