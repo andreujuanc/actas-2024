@@ -2,7 +2,7 @@
 
 ## Visión General
 
-Este proyecto está diseñado para recopilar, procesar y analizar datos de las elecciones venezolanas. Incluye scripts para la recolección de datos, procesamiento de imágenes y tabulación de votos a partir de actas digitales con el fin de preservar y defender nuestros votos como venezolanos de ataques malicioso contra las bases de datos principales.
+Este proyecto está diseñado para recopilar, procesar y analizar datos de las elecciones venezolanas del 28 de Julio de 2024. Incluye scripts para la recolección de datos, procesamiento de imágenes y tabulación de votos a partir de actas digitales con el fin de preservar y defender nuestros votos como venezolanos de ataques malicioso contra las bases de datos principales.
 
 URL del repositorio: [https://github.com/andreujuanc/actas-2024](https://github.com/andreujuanc/actas-2024)
 
